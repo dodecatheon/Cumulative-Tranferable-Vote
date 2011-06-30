@@ -19,7 +19,7 @@ last seat of a multi-seat faction, where vote-splitting or over-vote
 waste could have an effect.
 
 With Hare quota (total / n_seats), voting blocks get as much representation
-as they have, with the remainder lost or transfered to alternate party
+as they have, with the remainder lost or transferred to alternate party
 candidates.  If there are votes left over, they are applied, if applicable,
 to alternate party candidates with small residual votes on each ballot.
 
@@ -48,7 +48,7 @@ Standing:    candidate has neither met quota or been eliminated and is
              still in the running.
 
 Locked:      a candidate's vote becomes locked on a single ballot when it
-             cannot be transfered to any other candidate in the event
+             cannot be transferred to any other candidate in the event
              of an overquota rescaling or elimination.
 
              If candidate A's score is locked on a ballot on the first
@@ -69,8 +69,9 @@ Support:     Indicates whether a candidate received non-zero score on a ballot.
 """
 # For faster reverse sorting (in 2.4+):
 from operator import itemgetter
-from textwrap import dedent
+from textwrap import fill, dedent
 import os
+from math import log10
 
 
 # Utility function to sort a dictionary in reverse order of values
@@ -203,8 +204,11 @@ class CtvElection(object):
             ballot = {}
             for i, v in enumerate(line.rstrip().split(',')):
                 if v:
-                    if int(v):
-                        ballot[keys[i]] = float(int(v))
+                    intv = int(v)
+                    if intv:
+                        ballot[keys[i]] = float(intv)
+                        #ballot[keys[i]] = float(2.**(float(intv-1.0)/2.0))
+                        #ballot[keys[i]] = log10(float(intv+1.0))
             self.ballots.append(ballot)
 
         f.close()
@@ -257,10 +261,10 @@ colons"""
             if i > 0:
                 (c, gamma) = self.gammas[im1]
                 if gamma >= 0.0:
-                    print "\nCandidate %s weighted by gamma = %g" % \
+                    print "\nCandidate %s scaled by gamma = %g" % \
                         (c, gamma)
                 else:
-                    print "\nCandidate %s was seated without vote transfer" % \
+                    print "\nCandidate %s was seated with no vote transfer" % \
                         c
 
             print "totals[%d] = {" % i,
@@ -402,23 +406,42 @@ ballots."""
         self.totals_list.append(totals)
         self.locksums_list.append(locksums)
 
-    def run_election(self):
+    def print_locksums(self, locksums):
+        "Standard print function for locksums"
+        locked_candidates = self.standing & set(locksums.keys())
+        if len(locked_candidates) > 0:
+            print "Current locked-vote totals:"
+            for c in locked_candidates:
+                print "\t%s: %15.6f" % (c, locksums[c])
+        else:
+            print "No votes locked"
+        print ""
+
+
+    def run_election(self, verbose=True, debug=False):
+        "The meat of the method"
         if not self.normalized:
             self.normalize()
+
+        # Asterisk denotes that candidate's seating is forced
+        # because we've eliminated enough other candidates.
+        asterisk = ''
 
         totals = self.totals_list[-1]
         locksums = self.locksums_list[-1]
 
-        print "Starting with totals = "
         initial_totals = _reverse_sort_dict(totals)
-        _reverse_print_tuples(initial_totals)
+        if verbose:
+            print "Starting with totals:"
+            _reverse_print_tuples(initial_totals)
 
         # Keep track of the CV winning set
         cv_winning_set = set([c
                               for c, score in initial_totals[0:self.nseats]])
 
-        print "Starting with locksums = ", locksums
-        print ""
+        # Print initial locksum tallies
+        if verbose:
+            self.print_locksums(locksums)
 
         while len(self.seated) < self.nseats:
             totals = self.totals_list[-1]
@@ -430,7 +453,13 @@ ballots."""
              minkey,
              minval) = _maxmin_dict_items(totals, self.standing)
 
-            # "locksum" is the total vote that cannot be transfered
+            if verbose:
+                print "Maximum and minimum scores:"
+                print "\t%s: %15.6f" % (maxkey, maxval)
+                print "\t%s: %15.6f" % (minkey, minval)
+                print "\n",
+
+            # "locksum" is the total vote that cannot be transferred
             # to other candidates.
             locksum = locksums.get(maxkey,0.0)
 
@@ -438,7 +467,8 @@ ballots."""
                 ((maxval > self.quota) and
                  (maxval <= locksum))) :
 
-                print "Candidate %s seated with no transfer" % maxkey
+                print "Candidate %s seated%s with no transfer, score = %15.6f" % \
+                    (maxkey, asterisk, maxval)
                 if (locksum >= self.quota):
                     print "Transfer not possible because locksum is >= quota:"
                     print "Over-vote loss of %g votes --" % \
@@ -450,10 +480,10 @@ ballots."""
 
                 # Candidate maxkey is a winner, and does not require
                 # any transfers, or because of insufficient vote
-                # distribution on ballots, the vote cannot be transfered.
+                # distribution on ballots, the vote cannot be transferred.
 
                 self.seated.add(maxkey)
-                self.ordered_seated.append((maxkey,-1.0))
+                self.ordered_seated.append((maxkey,-1.0,asterisk))
                 self.standing.remove(maxkey)
 
                 self.totals_list.append(totals)
@@ -474,8 +504,6 @@ ballots."""
                         maxkey,
                     print "to transfer votes to\n"
 
-                print "Candidate %s seated, scaled by" % maxkey,
-
                 self.seated.add(maxkey)
                 self.standing.remove(maxkey)
 
@@ -485,22 +513,23 @@ ballots."""
                 if gamma < 0.0:
                     gamma = 0.0
 
-                self.ordered_seated.append((maxkey,gamma))
-                print "gamma = %g\n" % gamma
+                self.ordered_seated.append((maxkey,gamma,asterisk))
 
-                print "Error check:  maxval = %g, totals[%s] = %g" % (
-                    maxval,
-                    maxkey,
-                    totals[maxkey] )
+                if debug:
+                    print "Error check:  maxval = %g, totals[%s] = %g" % (
+                        maxval,
+                        maxkey,
+                        totals[maxkey] )
 
-                print "Error check:  gamma*(maxval-locksum)+locksum = ", \
-                    gamma * (maxval-locksum) + locksum
+                if debug:
+                    print "Error check:  gamma*(maxval-locksum)+locksum = ", \
+                        gamma * (maxval-locksum) + locksum
 
                 self.transfer_votes(maxkey, gamma)
 
-                print "Error check:  after transfer, totals[%s] = %g" % (
-                        maxkey,
-                        self.totals_list[-1].get(maxkey,0.0) )
+                print "Candidate %s seated%s," % (maxkey, asterisk), \
+                    "scaled by gamma = %g," % gamma, \
+                    "new score = %15.6f" % self.totals_list[-1].get(maxkey,0.0)
 
                 print ""
 
@@ -511,14 +540,13 @@ ballots."""
                 locksum = locksums.get(minkey,0.0)
 
                 if minval > locksum:
-
-                    print "Candidate %s eliminated with vote transfer" % minkey
-                    print ""
+                    print \
+                        "Candidate %s eliminated," % minkey, \
+                        "vote transferred = %15.6f\n" % minval
                 else:
                     print \
-                        "Candidate %s eliminated, no transfer, lost vote = %15.6f", \
-                        (minkey, locksum)
-                    print ""
+                        "Candidate %s eliminated," % minkey, \
+                        "cannot transfer, lost vote = %15.6f\n" % minval
 
                 self.eliminated.add(minkey)
                 self.standing.remove(minkey)
@@ -539,8 +567,15 @@ ballots."""
                 if diff > 0.0:
                     totals_diff.append((c,diff))
 
-            print "Transfer totals = "
-            _reverse_print_tuples(totals_diff)
+            if verbose:
+                print "\t%-15s%18s%18s" % ("Candidate",
+                                           "Transfer received",
+                                           "New score")
+                for c, s in sorted(totals_diff,
+                                   key=itemgetter(1),
+                                   reverse=True):
+                    print "\t%-15s%18.6f%18.6f" % ( c, s, new_totals[c])
+                print "\n",
 
             # Totals, reverse sorted (descending order):
             rsort_totals = _reverse_sort_dict(new_totals)
@@ -549,13 +584,22 @@ ballots."""
             n_seated = len(self.seated)
             n_needed = self.nseats - n_seated
             n_standing = len(self.standing)
-            print "# of seated   candidates = %d" % n_seated
-            print "# of standing candidates = %d" % n_standing
-            print "# of open seats          = %d" % n_needed, "\n"
+            if verbose:
+                print "# of seated   candidates = %d" % n_seated
+                print "# of standing candidates = %d" % n_standing
+                print "# of open seats          = %d" % n_needed, "\n"
+
+            # Check new max and min scores:
+            (maxkey,
+             maxval,
+             minkey,
+             minval) = _maxmin_dict_items(new_totals,
+                                          self.standing)
 
             if n_needed == 0:
-                print "All seats have filled."
-                print "Deleting all remaining standing candidates"
+                if verbose:
+                    print "All seats have filled."
+                    print "Deleting all remaining standing candidates"
                 for c in [k
                           for k, v in sort_totals
                           if k in self.standing]:
@@ -569,30 +613,50 @@ ballots."""
                             break
                 rsort_totals = _reverse_sort_dict(new_totals)
 
-            elif n_needed == n_standing :
-                # No one left to transfer to on later steps,
-                # so simply seat remaining candidates
-                print "No more transfer candidates available"
-                print "Seating all surviving candidates (%d needed == %d standing)" % ( n_needed, n_standing)
-                print ""
+            elif n_needed == n_standing:
+                if maxval > self.quota:
+                    if not asterisk:
+                        asterisk = '*'
+                        print fill(dedent("""\
+                        We could seat all remaining candidates now
+                        because the number of open seats is equal to the number
+                        of surviving candidates.
+                        """))
+                        print "\n",
+                        print fill(dedent("""\
+                        However, we will continue transfering votes until
+                        no candidate's total exceeds the quota, and will
+                        indicate all subsequent forced seats with an
+                        asterisk.
+                        """))
+                        print "\n",
+                else:
+                    # No more transfers possible,
+                    # so simply seat remaining candidates
+                    if verbose:
+                        print "No more transfer candidates available"
+                        print \
+                            "Seating all surviving candidates", \
+                            "(%d needed == %d standing)\n" % ( n_needed,
+                                                             n_standing)
+                    for c, v in rsort_totals:
+                        if c in self.standing:
+                            print \
+                                "Candidate %s seated* in final set," % c, \
+                                "vote = %15.6f" % v
 
-                for c in [k
-                          for k, v in rsort_totals
-                          if k in self.standing]:
-                    print "Candidate %s seated in final set of surviving candidates" % c
-                    self.seated.add(c)
-                    self.ordered_seated.append((c,-2.0))
-                    self.standing.remove(c)
-                    self.totals_list.append(new_totals)
-                    self.locksums_list.append(new_totals)
-                    self.support_list.append(new_support_list)
-                    self.gammas.append((c,-1.0))
+                            self.seated.add(c)
+                            self.ordered_seated.append((c,-2.0,asterisk))
+                            self.standing.remove(c)
+                            self.totals_list.append(new_totals)
+                            self.locksums_list.append(new_totals)
+                            self.support_list.append(new_support_list)
+                            self.gammas.append((c,-1.0))
+                    print ""
 
-            print "After transfer, totals  = "
-            _reverse_print_tuples(rsort_totals)
-
-            print "After transfer, locksums = ", new_locksums
-            print ""
+            # Print current running tally of locksums
+            if verbose:
+                self.print_locksums(new_locksums)
 
         print "======================================"
         winners = _reverse_sort_dict(self.totals_list[-1])
@@ -600,17 +664,25 @@ ballots."""
         ctv_winning_set = set([c
                                for c, score in winners])
 
-        print "Winners, in order seated = "
-        for c, gamma in self.ordered_seated:
+        print "Winners, in order seated:"
+        for c, gamma, ast in self.ordered_seated:
             if gamma >= 0.0:
-                print "\t%s seated with score scaled by %8.6f" % (c, gamma)
+                print \
+                    "\t%s seated with score scaled by %8.6f," % (c, gamma), \
+                    "score = %15.6f%s" % (self.totals_list[-1][c], ast)
             elif gamma == -1.0:
-                print "\t%s seated with no transfer possible" % c
+                print \
+                    "\t%s seated with no transfer possible,    " % c, \
+                    "score = %15.6f%s" % (self.totals_list[-1][c], ast)
             elif gamma == -2.0:
-                print "\t%s seated in final set" % c
+                print \
+                    "\t%s seated in final set,                 " % c, \
+                    "score = %15.6f%s" % (self.totals_list[-1][c], ast)
 
-        print "\nWinner total scores, in descending order:"
-        _reverse_print_tuples(winners)
+        print "\n",
+
+        if asterisk:
+            print "*Selection forced by elimination of other candidates\n"
 
         # print "Individual totals = ", _reverse_sort_dict(new_totals)
         print "Sum of all totals = ", sum(new_totals[c] for c in self.seated)
@@ -637,17 +709,23 @@ ballots."""
         # print "\nWinners:"
         # print _reverse_sort_dict(self.totals_list[-1])
 
-        print "\nInitial support list:"
-        print self.support_list[0]
+        if debug:
+            print "\nInitial support list:"
+            print self.support_list[0]
 
-        print "\nFinal support list:"
-        print self.support_list[-1]
+            print "\nFinal support list:"
+            print self.support_list[-1]
 
-        print "\nCV winners not in final CTV set"
-        print list(cv_winning_set - ctv_winning_set)
+        cv_minus_ctv = cv_winning_set - ctv_winning_set
+        ctv_minus_cv = ctv_winning_set - cv_winning_set
 
-        print "\nCTV winners not in initial top %d cumulative votes:" % self.nseats
-        print list(ctv_winning_set - cv_winning_set)
+        if len(cv_minus_ctv) > 0:
+            print "\nCV winners not in final CTV set: ", list(cv_minus_ctv)
+
+            print "CTV winners not in initial top %d cumulative votes: " % \
+                self.nseats, list(ctv_minus_cv)
+        else:
+            print "\nCTV winners are identical to CV winners."
 
         # print "\nFinal ballots, rescaled:"
         # for i, ballot in enumerate(self.ballots):
@@ -733,4 +811,4 @@ if __name__ == "__main__":
                       qtype='hare'
                       )
 
-    ctv.run_election()
+    ctv.run_election(verbose=True)
