@@ -417,6 +417,56 @@ ballots."""
             print "No votes locked"
         print ""
 
+    def cross_correlation(self):
+        # initial cross correlation dict of dicts
+        cc = {}
+        cands = list(self.standing)
+        n = len(cands)
+
+        if n <= 1:
+            return
+
+        for c1 in cands:
+            cc[c1] = {}
+            for c2 in cands:
+                cc[c1][c2] = 0.0
+
+        # add correlations for each ballot
+        for ballot in self.ballots:
+            cands = list(self.standing & set(ballot.keys()))
+            n = len(cands)
+            for i in xrange(n):
+                ci = cands[i]
+                vi = ballot.get(ci,0.0)
+                if vi > 0.0:
+                    cici = cc[ci].get(ci,0.0)
+                    cc[ci][ci] = cici + vi * vi
+                    if i < (n-1):
+                        for j in xrange(i+1,n):
+                            cj = cands[j]
+                            vj = ballot.get(cj,0.0)
+                            if vj > 0.0:
+                                vivj = vi * vj
+                                cicj = cc[ci].get(cj,0.0)
+                                cjci = cc[cj].get(ci,0.0)
+                                cc[ci][cj] = cicj + vivj
+                                cc[cj][ci] = cjci + vivj
+
+        # normalize correlations so that self-correlation = 1.0
+        cands = list(self.standing)
+        n = len(cands)
+
+        for c1 in cands:
+            v1sq = cc[c1][c1]
+            for c2 in cands:
+                c1c2 = cc[c1].get(c2,0.0)
+                if c1c2 > 0.0:
+                    cc[c1][c2] = c1c2 / v1sq
+                else:
+                    del cc[c1][c2]
+
+        self.cc = cc
+
 
     def run_election(self, verbose=True, debug=False):
         "The meat of the method"
@@ -435,6 +485,16 @@ ballots."""
             print "Starting with totals:"
             _reverse_print_tuples(initial_totals)
 
+        print "Cross correlations >= 0.1 indicate factions:"
+        self.cross_correlation()
+        for c, score in initial_totals:
+            print "%s:" % c, [c2
+                              for c2, v2 in self.cc[c].iteritems()
+                              if c2 != c
+                              if v2 >= 0.1]
+
+        print "\n",
+
         # Keep track of the CV winning set
         cv_winning_set = set([c
                               for c, score in initial_totals[0:self.nseats]])
@@ -447,6 +507,8 @@ ballots."""
             totals = self.totals_list[-1]
             locksums = self.locksums_list[-1]
             support_list = self.support_list[-1]
+
+            self.cross_correlation()
 
             (maxkey,
              maxval,
@@ -466,6 +528,9 @@ ballots."""
             if ((maxval == self.quota) or
                 ((maxval > self.quota) and
                  (maxval <= locksum))) :
+
+                # Transfer candidate
+                tc = maxkey
 
                 print "Candidate %s seated%s with no transfer, score = %15.6f" % \
                     (maxkey, asterisk, maxval)
@@ -496,6 +561,9 @@ ballots."""
             elif maxval > self.quota:
                 # Candidate maxkey is a winner!
                 # Redistribute excess votes.
+
+                # tc = Transfer candidate
+                tc = maxkey
 
                 if locksum > self.quota:
                     print "Over-vote loss of %g votes --" % \
@@ -537,6 +605,9 @@ ballots."""
                 # Candidate minkey is a loser:
                 # Eliminate candidate with smallest number of votes
 
+                # tc = Transfer Candidate
+                tc = minkey
+
                 locksum = locksums.get(minkey,0.0)
 
                 if minval > locksum:
@@ -568,14 +639,19 @@ ballots."""
                     totals_diff.append((c,diff))
 
             if verbose:
-                print "\t%-15s%18s%18s" % ("Candidate",
-                                           "Transfer received",
-                                           "New score")
-                for c, s in sorted(totals_diff,
-                                   key=itemgetter(1),
-                                   reverse=True):
-                    print "\t%-15s%18.6f%18.6f" % ( c, s, new_totals[c])
-                print "\n",
+                if len(totals_diff) > 0:
+                    print "\t%-15s%18s%8s%18s" % ("Candidate",
+                                                  "Transfer received",
+                                                  "Xcorr",
+                                                  "New score")
+                    for c, s in sorted(totals_diff,
+                                       key=itemgetter(1),
+                                       reverse=True):
+                        print "\t%-15s%18.6f%8.3f%18.6f" % ( c,
+                                                             s,
+                                                             self.cc[tc][c],
+                                                             new_totals[c])
+                    print "\n",
 
             # Totals, reverse sorted (descending order):
             rsort_totals = _reverse_sort_dict(new_totals)
@@ -598,8 +674,8 @@ ballots."""
 
             if n_needed == 0:
                 if verbose:
-                    print "All seats have filled."
-                    print "Deleting all remaining standing candidates"
+                    print "All seats are filled."
+                    print "Deleting any remaining standing candidates"
                 for c in [k
                           for k, v in sort_totals
                           if k in self.standing]:
@@ -617,6 +693,7 @@ ballots."""
                 if maxval > self.quota:
                     if not asterisk:
                         asterisk = '*'
+                        print 80*"*"
                         print fill(dedent("""\
                         We could seat all remaining candidates now
                         because the number of open seats is equal to the number
@@ -629,6 +706,7 @@ ballots."""
                         indicate all subsequent forced seats with an
                         asterisk.
                         """))
+                        print 80*"*"
                         print "\n",
                 else:
                     # No more transfers possible,
@@ -658,7 +736,7 @@ ballots."""
             if verbose:
                 self.print_locksums(new_locksums)
 
-        print "======================================"
+        print 80*"="
         winners = _reverse_sort_dict(self.totals_list[-1])
 
         ctv_winning_set = set([c
@@ -694,7 +772,7 @@ ballots."""
             else:
                 s += v
         print "Sum of untransferable votes = ", (self.nvotes - s)
-        print "======================================"
+        print 80*"="
 
 #         print """
 #
@@ -740,7 +818,7 @@ ballots."""
 
 if __name__ == "__main__":
 
-    # Test with 100 ballots
+    # Demo with 100 ballots
     #
     # Group A:  candidates a1, a2, a3, a4, a5, a6: 42%
     # Group B:  candidates b1, b2, b3, b4, b5:     35%
