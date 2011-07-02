@@ -70,7 +70,7 @@ Support:     Indicates whether a candidate received non-zero score on a ballot.
 # For faster reverse sorting (in 2.4+):
 from operator import itemgetter
 from textwrap import fill, dedent
-import os
+import re, os, sys
 from math import log10
 
 
@@ -174,7 +174,7 @@ class CtvElection(object):
         self.support_list = []
 
         # ------------------------------------------------------------
-        # Absorb ballots, either from input list or from a file
+        # Absorb ballots, from input list and/or from file or stdin
 
         if ballots:
             self.ballots = ballots
@@ -182,10 +182,10 @@ class CtvElection(object):
             self.ballots = []
 
         if filename:
-            if os.path.splitext(filename)[1] == '.csv':
-                self.csv_ballots(filename)
+            if filename == '-':
+                self.csv_ballots(stdin=True)
             else:
-                self.append_ballots(filename)
+                self.csv_ballots(filename=filename)
 
         self.nvotes = len(self.ballots)
 
@@ -194,11 +194,15 @@ class CtvElection(object):
             sys.exit(1)
 
     def csv_ballots(self,
-                    filename):
+                    filename=None, stdin=False):
         """\
-        Read ballots from a csv file.
-        First line is names of candidates."""
-        f = open(filename,'r')
+Read ballots from a csv file.  First line is names of candidates."""
+
+        if stdin:
+            f = sys.stdin
+        else:
+            f = open(filename,'r')
+
         keys = f.readline().rstrip().split(',')
         for line in f:
             ballot = {}
@@ -211,23 +215,9 @@ class CtvElection(object):
                         #ballot[keys[i]] = log10(float(intv+1.0))
             self.ballots.append(ballot)
 
-        f.close()
+        if not stdin:
+            f.close()
 
-        self.nvotes = len(self.ballots)
-
-
-    def append_ballots(self,
-                       filename):
-        """We assume each line 1of file looks like 'a:#, b:#, c:'.
-I.e., values separated by comma-space, with key:val pairs separated by
-colons"""
-        f = open(filename,'r'); lines = f.readlines(); f.close()
-        print "number of lines read = ",
-        print len(lines)
-        for line in lines:
-            self.ballots.append(dict([(pair.split(':')[0].lower(),
-                                       float(pair.split(':')[1]))
-                                      for pair in line.rstrip().split(', ')]))
         self.nvotes = len(self.ballots)
 
     def set_quota(self, qtype=None):
@@ -817,76 +807,125 @@ ballots."""
         #     print "\n",
 
 if __name__ == "__main__":
+    from optparse import OptionParser
 
-    # Demo with 100 ballots
-    #
-    # Group A:  candidates a1, a2, a3, a4, a5, a6: 42%
-    # Group B:  candidates b1, b2, b3, b4, b5:     35%
-    # Group C:  candidates c1, c2, c3:             15%
-    # Group D:  candidate  d1:                      8%
-    #
-    # With Droop quota  and 5 seats,
-    # we'd expect
-    # Group A to get 2 seats,
-    # Group B to get 2 seats,
-    # and the last seat to be given to whoever avoids elimination the longest.
-    #
-    # If Group A wins the last seat, we have "lost"
-    #
-    #   Group B:  1%
-    #   Group C: 15%
-    #   Group D:  8%
-    #
-    # about 24 to 25%, or about 1/4 of the vote!
-    #
-    # If Group D wins the last seat, we lose
-    #   Group B:  1%
-    #   Group C: 15%
-    #   Group A:  8%
-    #
-    # About the same amount.
-    #
-    # But with CTV, one of the Group C candidates should accumulate 15% of
-    # the vote and beat any remaining A, B or D candidate, therefore we
-    # would lose only about
-    #   Group B:  1%
-    #   Group D:  8%
-    #   Group A:  8%
-    #
-    # or about 17%, about what you'd expect with a Droop quota.
-    # That's about 40% improvement in PR over standard CV.
-    #
-    ballots = \
-        7 * \
-        [{'a1':10., 'a2':9.0, 'a3':8.0, 'a4':7.0, 'a5':1.0, 'a6':1.0, 'c2':1.0},
-         {'a1':10., 'a2':10., 'a3':10., 'a4':10., 'a5':1.0, 'a6':1.0, 'c3':1.0},
-         {'a1':1.0, 'a2':10., 'a3':9.0, 'a4':8.0, 'a5':7.0, 'a6':1.0},
-         {'a1':1.0, 'a2':10., 'a3':10., 'a4':10., 'a5':10., 'a6':1.0},
-         {'a1':1.0, 'a2':1.0, 'a3':10., 'a4':9.0, 'a5':8.0, 'a6':7.0},
-         {'a1':1.0, 'a2':1.0, 'a3':10., 'a4':10., 'a5':10., 'a6':10.},
-         {'b1':10., 'b2':9.0, 'b3':8.0, 'b4':0.0, 'b5':0.0},
-         {'b1':10., 'b2':10., 'b3':10., 'b4':0.0, 'b5':0.0},
-         {'b1':0.0, 'b2':10., 'b3':9.0, 'b4':8.0, 'b5':0.0},
-         {'b1':0.0, 'b2':10., 'b3':10., 'b4':10., 'b5':0.0},
-         {'b1':0.0, 'b2':0.0, 'b3':10., 'b4':10., 'b5':10.}] + \
-         5 * [{'c3':1.0, 'c1':10., 'c2':5.0},
-              {'c1':1.0, 'c2':10., 'c3':7.0},
-              {'c2':1.0, 'c3':10., 'c1':9.0}] + \
-              8 * [{'d1':10.}]
-    # ballots = \
-    #     50 * [{'Z':99., 'X':42., 'Q':0.}] + \
-    #     50 * [{'X':99., 'Q':43., 'Z':0.}] + \
-    #     40 * [{'Q':99., 'Z':53., 'X':0.}] + \
-    #     01 * [{'Q':99., 'X':77., 'Z':0.}]
+    usage="""\
+Usage %prog \\
+            [-n|--nseats NSEATS] \\
+            [-q|--quota-type QTYPE] \\
+            [-f|--filename FILENAME.csv] \\
+            [-v|--verbose] \\
+            [-D|--debug]
 
-    # ctv = CtvElection(ballots=ballots,
-    #                   nseats=5,
-    #                   qtype='hare'
-    #                   )
+%prog is a script to run Cumulative Transferable Voting (CTV) to
+implement a Proportional Representation (PR) election, using a set of
+tabulated ballots with ratings for each candidate.
 
-    ctv = CtvElection(nseats=9,
-                      filename='june2011.csv',
-                      qtype='hare'
-                      )
+The Comma Separated Variable format is assumed to be in the form
 
-    ctv.run_election(verbose=True)
+	name1,name2,name3,...
+        ,,,,,9,,,6,,7,,,2,...
+        ,,9,8,7,6,1,2,0,...
+
+with the list of candidates on the first line, and non-zero scores
+for the respective candidates as ballots on following lines.
+
+On each ballot, scores are summed and then each score is divided by
+the total.  This normalizes the ballot so all scores add up to 1,
+giving each ballot a single vote.
+
+To determine NSEATS winners, a quota is determined as NBALLOTS / NSEATS.
+
+We iterate until all seats have been filled:
+
+   Find max and min total scores.
+
+   If the max score exceeds the quota, transfer excess votes on each ballot
+   to standing candidates, in proportion to their score on that ballot.
+
+   If max score does not exceed the quota, delete the candidate with min
+   score and transfer vote to standing candidates on that ballot.
+
+   Stop when
+
+     The number of standing candidates equals the number of empty seats
+
+     and
+
+     No standing candidate has an over-quota vote to transfer.
+"""
+    version = "Version: %prog 0.1"
+
+    parser = OptionParser(usage=usage, version=version)
+
+    parser.add_option('-n',
+                      '--nseats',
+                      type=int,
+                      default=7,
+                      help=fill(dedent("""\
+                      Number of winning seats for election.  [Default: 7]""")))
+
+    parser.add_option('-q',
+                      '--quota-type',
+                      type='string',
+                      default='hare',
+                      help=fill(dedent("""\
+                      Quota type used in election.  'hare' = Hare =
+                      Number of ballots divided by number of seats.
+                      'droop' = Droop = approximately Nballots /
+                      (Nseats + 1), adjusted slightly.  [Default:
+                      hare]""")))
+
+    parser.add_option('-f',
+                      '--filename',
+                      type='string',
+                      default='-',
+                      help=fill(dedent("""\
+                      Filename of comma-separated-variable (csv) file
+                      containing ballots.  Use hyphen ('-') to take
+                      input from stdin.  [Default: -]""")))
+
+    parser.add_option('-v',
+                      '--verbose',
+                      action='store_true',
+                      default=False,
+                      help="Turn on verbose mode printout.  [Default:  False]")
+
+    parser.add_option('-D',
+                      '--debug',
+                      action='store_true',
+                      default=False,
+                      help="Turn on debug mode printout.  [Default:  False]")
+
+    opts, args = parser.parse_args()
+
+    if not re.match(r"hare|droop",opts.quota_type):
+        print "\nError, argument to --quota-type can be only 'hare' or 'droop'\n"
+        parser.print_help()
+        sys.exit(1)
+
+    if (opts.nseats < 1):
+        print "\nError, --nseats argument must be a positive integer\n"
+        parser.print_help()
+        sys.exit(1)
+
+    if (opts.filename == "-"):
+        print "Reading CSV input from stdin\n\n"
+    else:
+        if not os.path.isfile(opts.filename):
+            print "\nError, %s file does not exist\n" % opts.filename
+            parser.print_help()
+            sys.exit(1)
+
+        ext = os.path.splitext(opts.filename)[1]
+
+        if ((ext != '.csv') and (ext != '.CSV')):
+            print "\nError, %s file does not have .csv or .CSV extension\n"
+            parser.print_help()
+            sys.exit(1)
+
+    ctv = CtvElection(nseats=opts.nseats,
+                      filename=opts.filename,
+                      qtype=opts.quota_type)
+
+    ctv.run_election(verbose=opts.verbose, debug=opts.debug)

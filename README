@@ -28,29 +28,32 @@ over-quota or eliminated votes for a candidate are transferred to the
 remaining non-eliminated and non-seated candidates in proportion to their
 current vote totals.
 
-Votes can be read in from a CSV text file.
+Votes are read as CSV format from a *.csv file or stdin.
 
 The first line of the file is the list of candidates.
 
-Subsequent lines are the individual scores.
+Subsequent lines are the individual scores, with blanks corresponding to zero
+score.
 
 Scores are assumed to be integers, but are converted to floats internally and
 each ballot is normalized to a total score of 1.0.
 
-See ctv.py commments for more info.
+See ctv.py commments and output from './ctv.py --help' for more info.
 
-How to run the code (currently):
+For example, using june2011.csv file with results from
+http://rangevoting.org/June2011RealWorldRRVvotes.txt, you would run as
+follows:
 
-    # Edit end of ctv.py to read in input from the appropriate csv file.
+    ./ctv.py -n 9 -q hare -v -f june2011.csv
 
-    ./ctv.py
+Alternatively, you can create a sample ballot using sample_ballot.py and run
+from stdin as follows:
 
-Currently, it is set to process the june2011.csv file, using results from
+    ./sample_ballot.py | ./ctv.py -n 5 -q hare -v -f -
 
-   http://rangevoting.org/June2011RealWorldRRVvotes.txt
+If you want to exclude a candidate, use the Unix tool 'cut' as
+follows.
 
-TO DO:
+Let's say we are excluding candidate '102' in the 2nd field:
 
-Set up command-line arguments and switches so user can select input file,
-alternate between Hare and Droop quotas ('hare' is default) and modify
-printout.
+    cut -f1,3- -d, june2011.csv | ./ctv.py -n 9 -q hare -v -f -
