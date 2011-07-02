@@ -811,8 +811,7 @@ ballots."""
 if __name__ == "__main__":
     from optparse import OptionParser
 
-    usage="""\
-Usage %prog \\
+    usage="""%prog \\
             [-n|--nseats NSEATS] \\
             [-q|--quota-type QTYPE] \\
             [-f|--filename FILENAME.csv] \\
