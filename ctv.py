@@ -475,15 +475,18 @@ ballots."""
             print "Starting with totals:"
             _reverse_print_tuples(initial_totals)
 
-        print "Cross correlations >= 0.1 indicate factions:"
-        self.cross_correlation()
-        for c, score in initial_totals:
-            print "%s:" % c, [c2
-                              for c2, v2 in self.cc[c].iteritems()
-                              if c2 != c
-                              if v2 >= 0.1]
 
-        print "\n",
+
+        self.cross_correlation()
+        if verbose:
+            print "Cross correlations >= 0.1 indicate factions:"
+            for c, score in initial_totals:
+                print "%s:" % c, sorted([c2
+                                         for c2, v2 in self.cc[c].iteritems()
+                                         if c2 != c
+                                         if v2 >= 0.1],
+                                        key=itemgetter(0))
+            print "\n",
 
         # Keep track of the CV winning set
         cv_winning_set = set([c
@@ -629,7 +632,7 @@ ballots."""
                     totals_diff.append((c,diff))
 
             if verbose:
-                if len(totals_diff) > 0:
+                if len(totals_diff) > 0 and verbose:
                     print "\t%-15s%18s%8s%18s" % ("Candidate",
                                                   "Transfer received",
                                                   "Xcorr",
@@ -723,8 +726,7 @@ ballots."""
                     print ""
 
             # Print current running tally of locksums
-            if verbose:
-                self.print_locksums(new_locksums)
+            self.print_locksums(new_locksums)
 
         print 80*"="
         winners = _reverse_sort_dict(self.totals_list[-1])
@@ -750,7 +752,7 @@ ballots."""
         print "\n",
 
         if asterisk:
-            print "*Selection forced by elimination of other candidates\n"
+            print "*Selection inevitable after other candidates were eliminated.\n"
 
         # print "Individual totals = ", _reverse_sort_dict(new_totals)
         print "Sum of all totals = ", sum(new_totals[c] for c in self.seated)
