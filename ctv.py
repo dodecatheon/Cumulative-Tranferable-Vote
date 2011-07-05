@@ -425,43 +425,32 @@ ballots."""
         for ballot in self.ballots:
             cands = list(self.standing & set(ballot.keys()))
             n = len(cands)
-            for i in xrange(n):
-                ci = cands[i]
+            for ci in cands:
                 vi = ballot.get(ci,0.0)
-                if vi > 0.0:
-                    cici = cc[ci].get(ci,0.0)
-                    cc[ci][ci] = cici + vi * vi
-                    if i < (n-1):
-                        for j in xrange(i+1,n):
-                            cj = cands[j]
-                            vj = ballot.get(cj,0.0)
-                            if vj > 0.0:
-                                vivj = vi * vj
-                                cicj = cc[ci].get(cj,0.0)
-                                cjci = cc[cj].get(ci,0.0)
-                                cc[ci][cj] = cicj + vivj
-                                cc[cj][ci] = cjci + vivj
+                for cj in cands:
+                    cc[ci][cj] = (cc[ci].get(cj,0.0) +
+                                  vi * ballot.get(cj,0.0))
 
         # normalize correlations so that self-correlation = 1.0
         cands = list(self.standing)
         n = len(cands)
 
-        for c1 in cands:
-            v1sq = cc[c1][c1]
-            for c2 in cands:
-                c1c2 = cc[c1].get(c2,0.0)
-                if c1c2 > 0.0:
-                    cc[c1][c2] = c1c2 / v1sq
-                else:
-                    del cc[c1][c2]
+        for ci in cands:
+            visq = cc[ci].get(ci,0.0)
+            if visq:
+                for cj in cands:
+                    cc[ci][cj] = cc[ci].get(cj,0.0) / visq
 
         self.cc = cc
 
-
-    def run_election(self, verbose=True, debug=False):
+    def run_election(self, verbose=True, debug=False, terse=False):
         "The meat of the method"
         if not self.normalized:
             self.normalize()
+
+        # make output extremely terse, if selected
+        if terse:
+            verbose = False
 
         # Asterisk denotes that candidate's seating is forced
         # because we've eliminated enough other candidates.
@@ -525,16 +514,17 @@ ballots."""
                 # Transfer candidate
                 tc = maxkey
 
-                print "Candidate %s seated%s with no transfer, score = %15.6f" % \
-                    (maxkey, asterisk, maxval)
-                if (locksum >= self.quota):
-                    print "Transfer not possible because locksum is >= quota:"
-                    print "Over-vote loss of %g votes --" % \
-                        (locksum - self.quota)
-                    print "no standing candidates left on %s ballots" % \
-                        maxkey,
-                    print "to transfer votes to"
-                print ""
+                if not terse:
+                    print "Candidate %s seated%s with no transfer, score = %15.6f" % \
+                        (maxkey, asterisk, maxval)
+                    if (locksum >= self.quota):
+                        print "Transfer not possible because locksum is >= quota:"
+                        print "Over-vote loss of %g votes --" % \
+                            (locksum - self.quota)
+                        print "no standing candidates left on %s ballots" % \
+                            maxkey,
+                        print "to transfer votes to"
+                    print ""
 
                 # Candidate maxkey is a winner, and does not require
                 # any transfers, or because of insufficient vote
@@ -558,12 +548,13 @@ ballots."""
                 # tc = Transfer candidate
                 tc = maxkey
 
-                if locksum > self.quota:
-                    print "Over-vote loss of %g votes --" % \
-                        (locksum - self.quota)
-                    print "No standing candidates left on %s ballots " % \
-                        maxkey,
-                    print "to transfer votes to\n"
+                if not terse:
+                    if locksum > self.quota:
+                        print "Over-vote loss of %g votes --" % \
+                            (locksum - self.quota)
+                        print "No standing candidates left on %s ballots " % \
+                            maxkey,
+                        print "to transfer votes to\n"
 
                 self.seated.add(maxkey)
                 self.standing.remove(maxkey)
@@ -588,11 +579,12 @@ ballots."""
 
                 self.transfer_votes(maxkey, gamma)
 
-                print "Candidate %s seated%s," % (maxkey, asterisk), \
-                    "scaled by gamma = %g," % gamma, \
-                    "new score = %15.6f" % self.totals_list[-1].get(maxkey,0.0)
+                if not terse:
+                    print "Candidate %s seated%s," % (maxkey, asterisk), \
+                        "scaled by gamma = %g," % gamma, \
+                        "new score = %15.6f" % self.totals_list[-1].get(maxkey,0.0)
 
-                print ""
+                    print ""
 
             else:
                 # Candidate minkey is a loser:
@@ -603,14 +595,15 @@ ballots."""
 
                 locksum = locksums.get(minkey,0.0)
 
-                if minval > locksum:
-                    print \
-                        "Candidate %s eliminated," % minkey, \
-                        "vote transferred = %15.6f\n" % minval
-                else:
-                    print \
-                        "Candidate %s eliminated," % minkey, \
-                        "cannot transfer, lost vote = %15.6f\n" % minval
+                if not terse:
+                    if minval > locksum:
+                        print \
+                            "Candidate %s eliminated," % minkey, \
+                            "vote transferred = %15.6f\n" % minval
+                    else:
+                        print \
+                            "Candidate %s eliminated," % minkey, \
+                            "cannot transfer, lost vote = %15.6f\n" % minval
 
                 self.eliminated.add(minkey)
                 self.standing.remove(minkey)
@@ -631,20 +624,19 @@ ballots."""
                 if diff > 0.0:
                     totals_diff.append((c,diff))
 
-            if verbose:
-                if len(totals_diff) > 0 and verbose:
-                    print "\t%-15s%18s%8s%18s" % ("Candidate",
-                                                  "Transfer received",
-                                                  "Xcorr",
-                                                  "New score")
-                    for c, s in sorted(totals_diff,
-                                       key=itemgetter(1),
-                                       reverse=True):
-                        print "\t%-15s%18.6f%8.3f%18.6f" % ( c,
-                                                             s,
-                                                             self.cc[tc][c],
-                                                             new_totals[c])
-                    print "\n",
+            if len(totals_diff) > 0 and verbose:
+                print "\t%-15s%18s%8s%18s" % ("Candidate",
+                                              "Transfer received",
+                                              "Xcorr",
+                                              "New score")
+                for c, s in sorted(totals_diff,
+                                   key=itemgetter(1),
+                                   reverse=True):
+                    print "\t%-15s%18.6f%8.3f%18.6f" % ( c,
+                                                         s,
+                                                         self.cc[tc][c],
+                                                         new_totals[c])
+                print "\n",
 
             # Totals, reverse sorted (descending order):
             rsort_totals = _reverse_sort_dict(new_totals)
@@ -686,21 +678,22 @@ ballots."""
                 if maxval > self.quota:
                     if not asterisk:
                         asterisk = '*'
-                        print 80*"*"
-                        print fill(dedent("""\
-                        We could seat all remaining candidates now
-                        because the number of open seats is equal to the number
-                        of surviving candidates.
-                        """))
-                        print "\n",
-                        print fill(dedent("""\
-                        However, we will continue transfering votes until
-                        no candidate's total exceeds the quota, and will
-                        indicate all subsequent forced seats with an
-                        asterisk.
-                        """))
-                        print 80*"*"
-                        print "\n",
+                        if not terse:
+                            print 80*"*"
+                            print fill(dedent("""\
+                            We could seat all remaining candidates now
+                            because the number of open seats is equal to the number
+                            of surviving candidates.
+                            """))
+                            print "\n",
+                            print fill(dedent("""\
+                            However, we will continue transfering votes until
+                            no candidate's total exceeds the quota, and will
+                            indicate all subsequent forced seats with an
+                            asterisk.
+                            """))
+                            print 80*"*"
+                            print "\n",
                 else:
                     # No more transfers possible,
                     # so simply seat remaining candidates
@@ -712,9 +705,10 @@ ballots."""
                                                              n_standing)
                     for c, v in rsort_totals:
                         if c in self.standing:
-                            print \
-                                "Candidate %s seated* in final set," % c, \
-                                "vote = %15.6f" % v
+                            if not terse:
+                                print \
+                                    "Candidate %s seated* in final set," % c, \
+                                    "vote = %15.6f" % v
 
                             self.seated.add(c)
                             self.ordered_seated.append((c,-2.0,asterisk))
@@ -726,7 +720,8 @@ ballots."""
                     print ""
 
             # Print current running tally of locksums
-            self.print_locksums(new_locksums)
+            if not terse:
+                self.print_locksums(new_locksums)
 
         print 80*"="
         winners = _reverse_sort_dict(self.totals_list[-1])
@@ -892,6 +887,12 @@ We iterate until all seats have been filled:
                       default=False,
                       help="Turn on verbose mode printout.  [Default:  False]")
 
+    parser.add_option('-t',
+                      '--terse',
+                      action='store_true',
+                      default=False,
+                      help="Make printout even less verbose.  [Default:  False]")
+
     parser.add_option('-D',
                       '--debug',
                       action='store_true',
@@ -929,4 +930,6 @@ We iterate until all seats have been filled:
                       filename=opts.filename,
                       qtype=opts.quota_type)
 
-    ctv.run_election(verbose=opts.verbose, debug=opts.debug)
+    ctv.run_election(verbose=opts.verbose,
+                     terse=opts.terse,
+                     debug=opts.debug)
