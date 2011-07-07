@@ -407,42 +407,6 @@ ballots."""
             print "No votes locked"
         print ""
 
-    def cross_correlation(self):
-        # initial cross correlation dict of dicts
-        cc = {}
-        cands = list(self.standing)
-        n = len(cands)
-
-        if n <= 1:
-            return
-
-        for c1 in cands:
-            cc[c1] = {}
-            for c2 in cands:
-                cc[c1][c2] = 0.0
-
-        # add correlations for each ballot
-        for ballot in self.ballots:
-            cands = list(self.standing & set(ballot.keys()))
-            n = len(cands)
-            for ci in cands:
-                vi = ballot.get(ci,0.0)
-                for cj in cands:
-                    cc[ci][cj] = (cc[ci].get(cj,0.0) +
-                                  vi * ballot.get(cj,0.0))
-
-        # normalize correlations so that self-correlation = 1.0
-        cands = list(self.standing)
-        n = len(cands)
-
-        for ci in cands:
-            visq = cc[ci].get(ci,0.0)
-            if visq:
-                for cj in cands:
-                    cc[ci][cj] = cc[ci].get(cj,0.0) / visq
-
-        self.cc = cc
-
     def run_election(self, verbose=True, debug=False, terse=False):
         "The meat of the method"
         if not self.normalized:
@@ -465,18 +429,6 @@ ballots."""
             _reverse_print_tuples(initial_totals)
 
 
-
-        self.cross_correlation()
-        if verbose:
-            print "Cross correlations >= 0.1 indicate factions:"
-            for c, score in initial_totals:
-                print "%s:" % c, sorted([c2
-                                         for c2, v2 in self.cc[c].iteritems()
-                                         if c2 != c
-                                         if v2 >= 0.1],
-                                        key=itemgetter(0))
-            print "\n",
-
         # Keep track of the CV winning set
         cv_winning_set = set([c
                               for c, score in initial_totals[0:self.nseats]])
@@ -489,8 +441,6 @@ ballots."""
             totals = self.totals_list[-1]
             locksums = self.locksums_list[-1]
             support_list = self.support_list[-1]
-
-            self.cross_correlation()
 
             (maxkey,
              maxval,
@@ -625,17 +575,15 @@ ballots."""
                     totals_diff.append((c,diff))
 
             if len(totals_diff) > 0 and verbose:
-                print "\t%-15s%18s%8s%18s" % ("Candidate",
-                                              "Transfer received",
-                                              "Xcorr",
-                                              "New score")
+                print "\t%-15s%18s%18s" % ("Candidate",
+                                           "Transfer received",
+                                           "New score")
                 for c, s in sorted(totals_diff,
                                    key=itemgetter(1),
                                    reverse=True):
-                    print "\t%-15s%18.6f%8.3f%18.6f" % ( c,
-                                                         s,
-                                                         self.cc[tc][c],
-                                                         new_totals[c])
+                    print "\t%-15s%18.6f%18.6f" % ( c,
+                                                    s,
+                                                    new_totals[c])
                 print "\n",
 
             # Totals, reverse sorted (descending order):
