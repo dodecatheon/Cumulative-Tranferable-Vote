@@ -273,6 +273,61 @@ Read ballots from a csv file.  First line is names of candidates."""
 
         return _reverse_sort_dict(support)
 
+    def find_factions(self):
+        ranked_ballots = []
+        ballot_sets = []
+        for i, ballot in enumerate(self.ballots):
+            r = []
+            s = ''
+            for c, score in _reverse_sort_dict(ballot):
+                if score < 0.05:
+                    break
+                if s:
+                    if score == oldscore:
+                        s += ' = '
+                    else:
+                        s += ' > '
+                s += c
+                oldscore = score
+
+            # Sort the ' = ' separated candidates:
+            ranked_ballots.append(' > '.join(
+                    [' = '.join([
+                                tt
+                                for tt in sorted(ss.split(' = '))
+                                ])
+                                for ss in s.split(' > ')]))
+
+            ballot_sets.append(','.join(sorted([tt
+                                                for ss in s.split(' > ')
+                                                for tt in ss.split(' = ')
+                                                ])))
+
+        print "\nNumber of ballots per unique ranking:"
+        i = 1
+        oldrank = ''
+        for ranking in sorted(ranked_ballots):
+            if ranking == oldrank:
+                i += 1
+            elif oldrank:
+                print "%10d:\t%s" % (i,oldrank)
+                i = 1
+            oldrank = ranking
+        print "%10d:\t%s\n" % (i, oldrank)
+
+        print "\nNumber of ballots per unordered set:"
+        i = 1
+        oldbset = ''
+        for bset in sorted(ballot_sets):
+            if bset == oldbset:
+                i += 1
+            elif oldbset:
+                print "%10d:\t%s" % (i,oldbset)
+                i = 1
+            oldbset = bset
+        print "%10d:\t%s\n" % (i, oldbset)
+
+
     def normalize(self):
         # Normalize, return initial totals and ballots:
         totals = {}
@@ -407,7 +462,11 @@ ballots."""
             print "No votes locked"
         print ""
 
-    def run_election(self, verbose=True, debug=False, terse=False):
+    def run_election(self,
+                     verbose=True,
+                     debug=False,
+                     terse=False,
+                     rankings=False):
         "The meat of the method"
         if not self.normalized:
             self.normalize()
@@ -415,6 +474,13 @@ ballots."""
         # make output extremely terse, if selected
         if terse:
             verbose = False
+
+        if debug:
+            verbose = True
+            terse = False
+
+        if rankings:
+            self.find_factions()
 
         # Asterisk denotes that candidate's seating is forced
         # because we've eliminated enough other candidates.
@@ -759,6 +825,7 @@ if __name__ == "__main__":
             [-q|--quota-type QTYPE] \\
             [-f|--filename FILENAME.csv] \\
             [-v|--verbose] \\
+            [-r|--rankings] \\
             [-D|--debug]
 
 %prog is a script to run Cumulative Transferable Voting (CTV) to
@@ -841,6 +908,15 @@ We iterate until all seats have been filled:
                       default=False,
                       help="Make printout even less verbose.  [Default:  False]")
 
+    parser.add_option('-r',
+                      '--rankings',
+                      action='store_true',
+                      default=False,
+                      help=fill(dedent("""\
+                      Show rankings to expose whether there are any
+                      factions.  Note that this only works when voters
+                      don't rate every candidate.  [Default:  False]""")))
+
     parser.add_option('-D',
                       '--debug',
                       action='store_true',
@@ -880,4 +956,5 @@ We iterate until all seats have been filled:
 
     ctv.run_election(verbose=opts.verbose,
                      terse=opts.terse,
-                     debug=opts.debug)
+                     debug=opts.debug,
+                     rankings=opts.rankings)

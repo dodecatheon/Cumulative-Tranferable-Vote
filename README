@@ -57,3 +57,15 @@ follows.
 Let's say we are excluding candidate '102' in the 2nd field:
 
     cut -f1,3- -d, june2011.csv | ./ctv.py -n 9 -q hare -v -f -
+
+EXAMPLES:
+
+1) june2011.csv, containing results from
+   http://rangevoting.org/June2011RealWorldRRVvotes.txt
+
+2) unger.csv, containing example that has undesirable results with STV, from
+   http://rangevoting.org/STVPRunger.html,
+   using Borda scores.
+
+3) unger_new.csv, deleting two ballots from unger.csv as described in web
+   page above.
